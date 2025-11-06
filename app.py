@@ -55,83 +55,89 @@ def get_embedding_model():
 def get_retriever():
     """
     Cached function to create and populate the in-memory ChromaDB.
-    This combines ingest.py and the old get_retriever().
-    This will run ONCE when the Streamlit app starts.
+    This is a "pure" function and has NO st. calls.
+    It will run ONCE when the Streamlit app starts.
     """
     # --- Configuration ---
     DOCUMENTS_DIR = "./documents"
     COLLECTION_NAME = "policy_docs"
 
-    try:
-        # 1. Use an IN-MEMORY client, not PersistentClient
-        client = chromadb.Client()
-        
-        # 2. Get or create the collection
-        collection = client.get_or_create_collection(
-            name=COLLECTION_NAME,
-            metadata={"hnsw:space": "cosine"} 
-        )
+    # We must initialize the embedding model *inside* the cached function
+    # or pass it as an argument. Let's initialize it here.
+    embeddings_model = OpenAIEmbeddings()
 
-        # 3. --- Run Ingestion *if* collection is empty ---
-        # This makes it run only once
-        if collection.count() == 0:
-            st.toast("No documents found in DB. Running one-time ingestion...")
-            print("--- RUNNING INGESTION (ONE-TIME) ---")
-            
-            # Load documents
-            loader = DirectoryLoader(
-                DOCUMENTS_DIR,
-                glob="**/*.txt",
-                loader_cls=TextLoader,
-                show_progress=True
-            )
-            docs = loader.load()
-            if not docs:
-                st.error("No documents found in './documents' folder. App cannot start.")
-                return None
-
-            # Split documents
-            text_splitter = RecursiveCharacterTextSplitter(
-                chunk_size=1000,
-                chunk_overlap=200,
-                separators=["\n\n", "\n", " ", ""]
-            )
-            chunks = text_splitter.split_documents(docs)
-
-            # Embed and store
-            embeddings_model = get_embedding_model() # Get cached model
-            
-            for i, chunk in enumerate(chunks):
-                embedding = embeddings_model.embed_query(chunk.page_content)
-                chunk_id = f"{os.path.basename(chunk.metadata['source'])}_{i}"
-                
-                # Add to collection (using lists as required)
-                collection.add(
-                    ids=[chunk_id],
-                    embeddings=[embedding], # Must be a list
-                    documents=[chunk.page_content],
-                    metadatas=[chunk.metadata]
-                )
-                print(f"Processed chunk {i+1}/{len(chunks)}")
-            
-            st.toast("Ingestion complete! The bot is ready.")
-            print("--- INGESTION COMPLETE ---")
-        
-        else:
-            st.toast("Loaded existing vector store from cache.")
-            print("--- LOADED EXISTING VECTOR STORE FROM CACHE ---")
-
-        return collection # Return the populated collection
+    # 1. Use an IN-MEMORY client, not PersistentClient
+    client = chromadb.Client()
     
-    except Exception as e:
-        st.error(f"Error initializing ChromaDB: {e}")
-        return None
+    # 2. Get or create the collection
+    collection = client.get_or_create_collection(
+        name=COLLECTION_NAME,
+        metadata={"hnsw:space": "cosine"} 
+    )
+
+    # 3. --- Run Ingestion *if* collection is empty ---
+    if collection.count() == 0:
+        print("--- RUNNING INGESTION (ONE-TIME) ---")
+        
+        # Load documents
+        loader = DirectoryLoader(
+            DOCUMENTS_DIR,
+            glob="**/*.txt",
+            loader_cls=TextLoader,
+            show_progress=True
+        )
+        docs = loader.load()
+        if not docs:
+            print("ERROR: No documents found in './documents' folder.")
+            raise FileNotFoundError("No documents found in './documents' folder. Please add your .txt files.")
+
+        # Split documents
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=1000,
+            chunk_overlap=200,
+            separators=["\n\n", "\n", " ", ""]
+        )
+        chunks = text_splitter.split_documents(docs)
+
+        # Embed and store
+        for i, chunk in enumerate(chunks):
+            embedding = embeddings_model.embed_query(chunk.page_content)
+            chunk_id = f"{os.path.basename(chunk.metadata['source'])}_{i}"
+            
+            collection.add(
+                ids=[chunk_id],
+                embeddings=[embedding], # Must be a list
+                documents=[chunk.page_content],
+                metadatas=[chunk.metadata]
+            )
+            print(f"Processed chunk {i+1}/{len(chunks)}")
+        
+        print("--- INGESTION COMPLETE ---")
+    
+    else:
+        print("--- LOADED EXISTING VECTOR STORE FROM CACHE ---")
+
+    return collection # Return the populated collection
 
 
 # --- Get our global resources ---
 llm = get_llm()
-embedding_model = get_embedding_model()
-retriever = get_retriever() # This now runs the ingestion if needed
+embedding_model = get_embedding_model() # We still cache this for the node
+
+# --- Load Retriever (with UI feedback) ---
+retriever = None
+try:
+    # This will either be instant (cached) or take time (first run)
+    retriever = get_retriever()
+    
+    # Show a toast ONLY when the app successfully loads
+    st.toast("Bot is ready!", icon="🤖")
+
+except Exception as e:
+    # If get_retriever() failed, show a permanent error
+    st.error(f"Failed to initialize the bot. Error: {e}", icon="🚨")
+# --- End Retriever Loading ---
+
 
 structured_llm = llm.with_structured_output(
     BotResponse,
