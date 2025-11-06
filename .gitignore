@@ -1,4 +1,10 @@
-.env
+# Environment
 .venv/
+.env
+
+# Database
 chroma_db/
+
+# Python cache
 __pycache__/
+*.pyc
