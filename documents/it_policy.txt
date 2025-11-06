@@ -1,0 +1,12 @@
+IT Security and Device Policy
+
+Password Management
+All company passwords must be at least 12 characters long and include a mix of uppercase letters, lowercase letters, numbers, and special characters. Passwords must be changed every 90 days. Do not share your password with anyone.
+
+If you are locked out or need to reset your password, please use the self-service portal at "it-reset.company.com". If you are unable to access the portal, please file a ticket with the IT help desk.
+
+VPN Access
+Access to the internal company network from outside the office requires the use of the company's official VPN client. The VPN client must be active at all times when handling sensitive company data. Two-factor authentication (2FA) is required for all VPN logins.
+
+Acceptable Use
+Company devices, including laptops and mobile phones, are provided for business use. Incidental personal use is permitted, but employees should not install unauthorized software. All device activity is subject to monitoring by the IT department for security purposes.
